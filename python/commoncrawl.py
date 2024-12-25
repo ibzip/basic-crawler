@@ -1,12 +1,9 @@
+import subprocess
 from abc import ABC, abstractmethod
 import csv
 import gzip
-from typing import Generator, List, Optional
+import os
 import requests
-
-
-CRAWL_PATH = "cc-index/collections/CC-MAIN-2024-30/indexes"
-BASE_URL = "https://data.commoncrawl.org"
 
 
 class Downloader(ABC):
@@ -16,15 +13,24 @@ class Downloader(ABC):
 
 
 class CCDownloader(Downloader):
-    def __init__(self, base_url: str) -> None:
-        self.base_url = base_url
+    def __init__(self, crawl_path: str, logger, batcher_monitor) -> None:
+        self.crawl_path = crawl_path
+        self.logger = logger
+        self.batcher_monitor = batcher_monitor
 
     def download_and_unzip(self, url: str, start: int, length: int) -> bytes:
         headers = {"Range": f"bytes={start}-{start+length-1}"}
-        response = requests.get(f"{self.base_url}/{url}", headers=headers)
-        response.raise_for_status()
-        buffer = response.content
-        return gzip.decompress(buffer)
+        try:
+            response = requests.get(f"{self.crawl_path}/{url}", headers=headers)
+            response.raise_for_status()
+            buffer = response.content
+            return gzip.decompress(buffer)
+        except requests.RequestException as e:
+            self.logger.info(f"Error for prefix URL: {self.crawl_path}/{url}, Failed to fetch response: {e}")
+            self.batcher_monitor.increment_counter(
+                "batcher_failed_url_cdx_chunk_download"
+            )
+            return b""  # Return an empty byte object as a fallback
 
 
 class IndexReader(ABC):
@@ -32,9 +38,15 @@ class IndexReader(ABC):
     def __iter__(self):
         pass
 
+    @abstractmethod
+    def get_size(self):
+        pass
+
 
 class CSVIndexReader(IndexReader):
     def __init__(self, filename: str) -> None:
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"The file '{filename}' does not exist.")
         self.file = open(filename, "r")
         self.reader = csv.reader(self.file, delimiter="\t")
 
@@ -46,6 +58,19 @@ class CSVIndexReader(IndexReader):
 
     def __del__(self) -> None:
         self.file.close()
+
+    def get_size(self):
+        """Get the total number of rows in the file using wc -l."""
+        result = subprocess.run(
+            ["wc", "-l", self.file.name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Error counting lines: {result.stderr}")
+        line_count = int(result.stdout.split()[0])
+        return line_count
 
 
 def test_can_read_index(tmp_path):
