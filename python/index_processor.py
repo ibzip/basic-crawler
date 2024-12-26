@@ -21,48 +21,74 @@ class ProcessIndexBase:
         self.batcher_monitor = batcher_monitor
 
         self.found_urls = []
-        self.dedup_type = None
 
     def publish_batch(self, batch) -> None:
-        logger.info(f"Pushing batch of size {len(batch)}")
+        #logger.info(f"Pushing batch of size {len(batch)}")
         self.channel.basic_publish(
             exchange="",
             routing_key=self.rabbitmq_queue_name,
             body=json.dumps(batch),
         )
-        self.batcher_monitor.increment_cunter(
+        self.batcher_monitor.increment_counter(
             "batcher_pushed_batches"
         )
 
-    def _process_cdx_info(self, cdx_chunk: str):
-        raise NotImplementedError("Subclasses should implement this method")
+    def _get_dedup_value(self, values):
+        pass
+
+    def _process_cdx_info(self, data):
+        local_found_urls = []
+
+        for line in data:
+            if line == "":
+                continue
+            values = line.split(" ")
+            #print(f"surt_url is {values[0]}, timestamp is {values[1]}")
+            dedup_value = self._get_dedup_value(values)
+            metadata = json.loads("".join(values[2:]))
+            record = self._process_line_in_cdx_block(values, metadata, dedup_value)
+            if not len(record):
+                self.batcher_monitor.increment_counter(
+                    "batcher_skipped_documents"
+                )
+            else:
+                self.batcher_monitor.increment_counter(
+                    "batcher_skipped_documents"
+                )
+                local_found_urls.append(record)
+        return local_found_urls
 
 
-    def _process_line_in_cdx_block(self, line):
-        if line == "":
-            return {}
-        values = line.split(" ")
-        metadata = json.loads("".join(values[2:]))
+    def _process_line_in_cdx_block(self, values, metadata, dedup_value):
         surt_url = values[0]
-
-        dedup_value = surt_url if self.dedup_type == config.DedupType.LATEST_URL else metadata['digest']
 
         if self.dedup_data_store.contains(dedup_value):
             # We already have the same data from this url(based on digest value)
             # so ignore this url
+            #print(f"skipping surt_url {surt_url} due to dup")
+            self.batcher_monitor.increment_counter(
+                "batcher_dups_skipped_documents"
+            )
             return {}
+
         self.dedup_data_store.add(dedup_value)
 
         if (
-                "languages" in metadata
-                and "eng" in metadata["languages"]
-                and metadata["status"] == "200"
+                "languages" in metadata and any(lang in metadata["languages"] for lang in config.config["FILTERS"]["languages"]) and
+                metadata.get("status") in config.config["FILTERS"]["status"]
         ):
+            self.batcher_monitor.increment_counter(
+                "batcher_considered_docs_after_filtering"
+            )
             return {
                 "surt_url": surt_url,
                 "timestamp": values[1],
                 "metadata": metadata,
             }
+        else:
+            self.batcher_monitor.increment_counter(
+                "batcher_filtered_documents"
+            )
         return {}
 
     def process(self, index: commoncrawl.IndexReader) -> None:
@@ -78,8 +104,14 @@ class ProcessIndexBase:
             crawl_version, url_prefix, _ = cdx_chunk[0].split(' ')
 
             if url_prefix != prev_prefix:
+                # since we merged all the cluster.idx fies, and sorted the final file based on url_prefx/timestmap in descending order,
+                # if there are prefix duplicates in the final file(arising from multiple individual cluster.idx files), they will
+                # be lying together consecutively. That is why when the url prefix changes, we can be sure that we won't see this prefix again
+                # and hence we can empty th state for this prefix.
+                logger.info(f"starting new_prefix {url_prefix}")
+
                 # We are going to process urls for a new prefix, so clear the dedup store
-                # for previous prefix
+                # for previous prefix, saves memory
                 self.dedup_data_store.clear()
 
             cdx_crawl_url = f"cc-index/collections/{crawl_version}/indexes/{cdx_chunk[1]}"
@@ -88,9 +120,15 @@ class ProcessIndexBase:
             ).decode("utf-8")
 
             self.found_urls.extend(
-                self._process_cdx_info(data)
+                # We will need to maintain state for all unique surt_urls found under a prefix.
+                # From that state of unique surt_urls, we would need to pick either:
+                ## 1. the latest data-containing url based on timestamp
+                ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
+                # This proces shappens in the following function call.
+                self._process_cdx_info(data.split("\n"))
             )
-
+            #if url_prefix == "zw,org,talia)/2024/04/29/mostbet-az-90-kazino-azerbaycan-en-yuksek-bukmeyker-formal-sayt-%e6%b3%b0%e5%9b%bd%e5%a4%b4%e6%9d%a1%e6%96%b0%e9%97%bb-adiyaman-583":
+            #    exit(0)
             if len(self.found_urls) >= self.batch_size:
                 self.publish_batch(self.found_urls)
                 self.found_urls = []
@@ -106,39 +144,20 @@ class ProcessIndexBase:
         if self.found_urls:
             self.publish_batch(self.found_urls)
 
+
 class ProcessIndexLatestCrawl(ProcessIndexBase):
-    def __index__(self, *args, **kwargs):
-        self.dedup_type = config.DedupType.LATEST_URL
-        super().__init__(*args, **kwargs)
+    def _get_dedup_value(self, values):
+        return values[0]
 
     def _process_cdx_info(self, data):
-        local_found_urls = []
+        # Reverse data so that for duplicated surt_urls, the latest url comes to the top
+        # In CDX files, same surt_urls are found consecutively in an ascending sorting order
+        # Reverse the data to make the order descending
+        # Then later we will filter the duplicates and pink only the top url in every set of duplicates
+        data.reverse()
+        return super()._process_cdx_info(data)
 
-        for line in data.split("\n"):
-            record = self._process_line_in_cdx_block(line)
-            if not len(record):
-                self.batcher_monitor.increment_cunter(
-                    "batcher_skipped_documents"
-                )
-            else:
-                local_found_urls.append(record)
-        return local_found_urls
 
 class ProcessIndexUniqueDigest(ProcessIndexBase):
-    def __index__(self, *args, **kwargs):
-        self.dedup_type = config.DedupType.UNIQUE_DIGEST_BASED
-        super().__init__(*args, **kwargs)
-
-
-    def _process_cdx_info(self, data):
-        local_found_urls = []
-
-        for line in data.split("\n"):
-            record = self._process_line_in_cdx_block(line, )
-            if not len(record):
-                self.batcher_monitor.increment_cunter(
-                    "batcher_skipped_documents"
-                )
-            else:
-                local_found_urls.append(record)
-        return local_found_urls
+    def _get_dedup_value(self, values):
+        return json.loads("".join(values[2:]))["digest"] # digest value from the metadata

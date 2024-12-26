@@ -128,12 +128,20 @@ def main() -> None:
         "Percentage of records processed from combined cluster.idx"
     )
     batcher_monitoring.create_counter(
-        "batcher_skipped_documents",
-        "Number of documents filteres due to language criteria or url inaccessibility"
+        "batcher_considered_docs_after_filtering",
+        "Number of documents filtered due to language criteria or url inaccessibility"
+    )
+    batcher_monitoring.create_counter(
+        "batcher_dups_skipped_documents",
+        "Number of documents filtered due to language criteria or url inaccessibility"
+    )
+    batcher_monitoring.create_counter(
+        "batcher_filtered_documents",
+        "Number of documents filtered due to language criteria or url inaccessibility"
     )
 
     channel = RabbitMQChannel(config.config["QUEUE_NAME"])
-    downloader = commoncrawl.CCDownloader(config.config["BASE_URL"], logger)
+    downloader = commoncrawl.CCDownloader(config.config["BASE_URL"], logger, batcher_monitoring)
     index_reader = commoncrawl.CSVIndexReader(f"{output_dir}/{combined_cluster_file}")
 
     deduplication_type = config.config.get("DEDUPLICATION_TYPE", config.DedupType.LATEST_URL)

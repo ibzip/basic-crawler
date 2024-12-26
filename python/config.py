@@ -1,15 +1,14 @@
 # config.py
 from enum import Enum
+from typing import Dict
 
 class DedupStoreType(Enum):
     REDIS = "redis"
     DICT = "dict"
 
-
 class DedupType(Enum):
     LATEST_URL = "latest_url"
     UNIQUE_DIGEST_BASED = "digest_based"
-
 
 config = {
     "CRAWL_VERSION": [
@@ -28,11 +27,15 @@ config = {
     "BASE_URL": "https://data.commoncrawl.org",  # Replace with the actual base URL
     "DEDUP_STORE_TYPE": DedupStoreType.DICT, # ["dict", "redis"]
     "DEDUPLICATION_TYPE": DedupType.LATEST_URL, # ['latest_url', 'unique_digest_based']
-    "QUEUE_NAME": "batches"
+    "QUEUE_NAME": "batches",
+    "FILTERS": {
+        "languages": ["eng"],
+        "status": ["200"]
+    }
 }
 
 # Generate a dictionary for CLUSTER_IDX_URLS with the crawl version as the key
-CLUSTER_IDX_URLS = {
+CLUSTER_IDX_URLS: Dict[str, str] = {
     version: f"{config['BASE_URL']}/cc-index/collections/{version}/indexes/cluster.idx"
     for version in config["CRAWL_VERSION"]
 }
