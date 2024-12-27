@@ -29,7 +29,7 @@ config = {
     "DEDUPLICATION_TYPE": DedupType.LATEST_URL, # ['latest_url', 'unique_digest_based']
     "QUEUE_NAME": "batches",
     "FILTERS": {
-        "languages": ["en"],
+        "languages": ["eng"],
         "status": ["200"]
     },
     "CLUSTER_DIR": "cluster_files",

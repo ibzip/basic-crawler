@@ -67,7 +67,6 @@ class ProcessIndexBase:
             )
             return {}
 
-        self.dedup_data_store.add(dedup_value)
 
         if (
                 "languages" in metadata and any(lang in metadata["languages"] for lang in config.config["FILTERS"]["languages"]) and
@@ -76,6 +75,7 @@ class ProcessIndexBase:
             self.batcher_monitor.increment_counter(
                 "batcher_docs_considered_after_filtering"
             )
+            self.dedup_data_store.add(dedup_value)
             return {
                 "surt_url": surt_url,
                 "timestamp": values[1],
@@ -119,7 +119,7 @@ class ProcessIndexBase:
                 # From that state of unique surt_urls, we would need to pick either:
                 ## 1. the latest data-containing url based on timestamp
                 ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
-                # This proces shappens in the following function call.
+                # This process happens in the following function call.
 
                 self._process_cdx_info(data.split("\n"))
             )
