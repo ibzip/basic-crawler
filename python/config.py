@@ -29,10 +29,15 @@ config = {
     "DEDUPLICATION_TYPE": DedupType.LATEST_URL, # ['latest_url', 'unique_digest_based']
     "QUEUE_NAME": "batches",
     "FILTERS": {
-        "languages": ["eng"],
+        "languages": ["en"],
         "status": ["200"]
-    }
+    },
+    "CLUSTER_DIR": "cluster_files",
+    "COMBINED_CLUSTER_FILE": "combined_cluster.idx"
+
 }
+
+
 
 # Generate a dictionary for CLUSTER_IDX_URLS with the crawl version as the key
 CLUSTER_IDX_URLS: Dict[str, str] = {

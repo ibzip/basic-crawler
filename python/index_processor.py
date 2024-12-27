@@ -23,7 +23,6 @@ class ProcessIndexBase:
         self.found_urls = []
 
     def publish_batch(self, batch) -> None:
-        #logger.info(f"Pushing batch of size {len(batch)}")
         self.channel.basic_publish(
             exchange="",
             routing_key=self.rabbitmq_queue_name,
@@ -37,37 +36,34 @@ class ProcessIndexBase:
         pass
 
     def _process_cdx_info(self, data):
+        # Reverse data so that for duplicated surt_urls, the latest url comes to the top
+        # In CDX files, same surt_urls are found consecutively in an ascending sorting order
+        # Reverse the data to make the order descending
+        # Then later we will filter the duplicates and pick only the top url in every set of duplicates
+        data.reverse()
+
         local_found_urls = []
 
         for line in data:
             if line == "":
                 continue
             values = line.split(" ")
-            #print(f"surt_url is {values[0]}, timestamp is {values[1]}")
             dedup_value = self._get_dedup_value(values)
             metadata = json.loads("".join(values[2:]))
             record = self._process_line_in_cdx_block(values, metadata, dedup_value)
-            if not len(record):
-                self.batcher_monitor.increment_counter(
-                    "batcher_skipped_documents"
-                )
-            else:
-                self.batcher_monitor.increment_counter(
-                    "batcher_skipped_documents"
-                )
+
+            if len(record):
                 local_found_urls.append(record)
         return local_found_urls
 
 
     def _process_line_in_cdx_block(self, values, metadata, dedup_value):
         surt_url = values[0]
-
         if self.dedup_data_store.contains(dedup_value):
             # We already have the same data from this url(based on digest value)
             # so ignore this url
-            #print(f"skipping surt_url {surt_url} due to dup")
             self.batcher_monitor.increment_counter(
-                "batcher_dups_skipped_documents"
+                "batcher_duplicate_skipped_documents"
             )
             return {}
 
@@ -78,7 +74,7 @@ class ProcessIndexBase:
                 metadata.get("status") in config.config["FILTERS"]["status"]
         ):
             self.batcher_monitor.increment_counter(
-                "batcher_considered_docs_after_filtering"
+                "batcher_docs_considered_after_filtering"
             )
             return {
                 "surt_url": surt_url,
@@ -100,9 +96,8 @@ class ProcessIndexBase:
 
         prev_prefix = None
         for cdx_chunk in index:
-            #logger.info(cdx_chunk)
-            crawl_version, url_prefix, _ = cdx_chunk[0].split(' ')
 
+            crawl_version, url_prefix, _ = cdx_chunk[0].split(' ')
             if url_prefix != prev_prefix:
                 # since we merged all the cluster.idx fies, and sorted the final file based on url_prefx/timestmap in descending order,
                 # if there are prefix duplicates in the final file(arising from multiple individual cluster.idx files), they will
@@ -125,10 +120,12 @@ class ProcessIndexBase:
                 ## 1. the latest data-containing url based on timestamp
                 ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
                 # This proces shappens in the following function call.
+
                 self._process_cdx_info(data.split("\n"))
             )
             #if url_prefix == "zw,org,talia)/2024/04/29/mostbet-az-90-kazino-azerbaycan-en-yuksek-bukmeyker-formal-sayt-%e6%b3%b0%e5%9b%bd%e5%a4%b4%e6%9d%a1%e6%96%b0%e9%97%bb-adiyaman-583":
             #    exit(0)
+
             if len(self.found_urls) >= self.batch_size:
                 self.publish_batch(self.found_urls)
                 self.found_urls = []
@@ -148,14 +145,6 @@ class ProcessIndexBase:
 class ProcessIndexLatestCrawl(ProcessIndexBase):
     def _get_dedup_value(self, values):
         return values[0]
-
-    def _process_cdx_info(self, data):
-        # Reverse data so that for duplicated surt_urls, the latest url comes to the top
-        # In CDX files, same surt_urls are found consecutively in an ascending sorting order
-        # Reverse the data to make the order descending
-        # Then later we will filter the duplicates and pink only the top url in every set of duplicates
-        data.reverse()
-        return super()._process_cdx_info(data)
 
 
 class ProcessIndexUniqueDigest(ProcessIndexBase):
