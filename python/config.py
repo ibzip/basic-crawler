@@ -33,7 +33,8 @@ config = {
         "status": ["200"]
     },
     "CLUSTER_DIR": "cluster_files",
-    "COMBINED_CLUSTER_FILE": "combined_cluster.idx"
+    "COMBINED_CLUSTER_FILE": "combined_cluster.idx",
+    "WORKER_TEXT_SIZE_FILTER": [500, 1000000]
 
 }
 

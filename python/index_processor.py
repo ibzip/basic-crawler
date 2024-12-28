@@ -42,8 +42,6 @@ class ProcessIndexBase:
         # Then later we will filter the duplicates and pick only the top url in every set of duplicates
         data.reverse()
 
-        local_found_urls = []
-
         for line in data:
             if line == "":
                 continue
@@ -53,8 +51,10 @@ class ProcessIndexBase:
             record = self._process_line_in_cdx_block(values, metadata, dedup_value)
 
             if len(record):
-                local_found_urls.append(record)
-        return local_found_urls
+                self.found_urls.append(record)
+                if len(self.found_urls) >= self.batch_size:
+                    self.publish_batch(self.found_urls)
+                    self.found_urls = []
 
 
     def _process_line_in_cdx_block(self, values, metadata, dedup_value):
@@ -114,21 +114,15 @@ class ProcessIndexBase:
                 cdx_crawl_url, int(cdx_chunk[2]), int(cdx_chunk[3])
             ).decode("utf-8")
 
-            self.found_urls.extend(
-                # We will need to maintain state for all unique surt_urls found under a prefix.
-                # From that state of unique surt_urls, we would need to pick either:
-                ## 1. the latest data-containing url based on timestamp
-                ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
-                # This process happens in the following function call.
+            # We will need to maintain state for all unique surt_urls found under a prefix.
+            # From that state of unique surt_urls, we would need to pick either:
+            ## 1. the latest data-containing url based on timestamp
+            ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
+            # This process happens in the following function call.
 
-                self._process_cdx_info(data.split("\n"))
-            )
+            self._process_cdx_info(data.split("\n"))
             #if url_prefix == "zw,org,talia)/2024/04/29/mostbet-az-90-kazino-azerbaycan-en-yuksek-bukmeyker-formal-sayt-%e6%b3%b0%e5%9b%bd%e5%a4%b4%e6%9d%a1%e6%96%b0%e9%97%bb-adiyaman-583":
             #    exit(0)
-
-            if len(self.found_urls) >= self.batch_size:
-                self.publish_batch(self.found_urls)
-                self.found_urls = []
 
             prev_prefix = url_prefix
             rows_processed += 1

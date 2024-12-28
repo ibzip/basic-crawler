@@ -13,10 +13,11 @@ class Downloader(ABC):
 
 
 class CCDownloader(Downloader):
-    def __init__(self, crawl_path: str, logger, batcher_monitor) -> None:
+    def __init__(self, crawl_path: str, logger, monitor, counter_to_update) -> None:
         self.crawl_path = crawl_path
         self.logger = logger
-        self.batcher_monitor = batcher_monitor
+        self.monitor = monitor
+        self.counter_to_update = counter_to_update
 
     def download_and_unzip(self, url: str, start: int, length: int) -> bytes:
         headers = {"Range": f"bytes={start}-{start+length-1}"}
@@ -27,8 +28,8 @@ class CCDownloader(Downloader):
             return gzip.decompress(buffer)
         except requests.RequestException as e:
             self.logger.info(f"Error for prefix URL: {self.crawl_path}/{url}, Failed to fetch response: {e}")
-            self.batcher_monitor.increment_counter(
-                "batcher_failed_url_cdx_chunk_download"
+            self.monitor.increment_counter(
+                self.counter_to_update
             )
             return b""  # Return an empty byte object as a fallback
 

@@ -4,3 +4,4 @@ prometheus-client
 requests
 warcio
 pytest
+boto3
