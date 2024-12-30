@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import csv
 import gzip
 import os
+
+import aiohttp
 import requests
 
 
@@ -31,6 +33,31 @@ class CCDownloader(Downloader):
             self.monitor.increment_counter(
                 self.counter_to_update
             )
+            return b""  # Return an empty byte object as a fallback
+
+
+class AsyncDownloader:
+    async def download_and_unzip(self, url: str, start: int, length: int):
+        pass
+
+class AsyncCCDownloader(AsyncDownloader):
+    def __init__(self, crawl_path: str, logger, monitor, counter_to_update) -> None:
+        self.crawl_path = crawl_path
+        self.logger = logger
+        self.monitor = monitor
+        self.counter_to_update = counter_to_update
+
+    async def download_and_unzip(self, url: str, start: int, length: int) -> bytes:
+        headers = {"Range": f"bytes={start}-{start+length-1}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.crawl_path}/{url}", headers=headers) as response:
+                    response.raise_for_status()
+                    buffer = await response.read()
+                    return gzip.decompress(buffer)
+        except aiohttp.ClientError as e:
+            self.logger.info(f"Error for prefix URL: {self.crawl_path}/{url}, Failed to fetch response: {e}")
+            self.monitor.increment_counter(self.counter_to_update)
             return b""  # Return an empty byte object as a fallback
 
 
