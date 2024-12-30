@@ -1,10 +1,14 @@
+import datetime
 import io
+import hashlib
 import json
 import logging
-from prometheus_client import start_http_server
-import trafilatura
+import os
 import uuid
 
+import boto3
+from prometheus_client import start_http_server
+import trafilatura
 from warcio.archiveiterator import WARCIterator
 
 from commoncrawl import CCDownloader, Downloader
@@ -19,6 +23,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 My_WORKER_ID = uuid.uuid4().hex[:16]
+
+
+s3_endpoint = os.getenv("MINIO_ENDPOINT")
+access_key = os.getenv("MINIO_ACCESS_KEY")
+secret_key = os.getenv("MINIO_SECRET_KEY")
+
+print(f"{s3_endpoint}, {access_key}, {secret_key}")
+s3_client = boto3.client(
+    "s3",
+    endpoint_url=s3_endpoint,
+    aws_access_key_id=access_key,
+    aws_secret_access_key=secret_key,
+)
 
 
 def text_fits_length(txt):
@@ -39,8 +56,46 @@ def process_batch(downloader: Downloader, ch, method, _properties, body):
         for record in WARCIterator(io.BytesIO(data)):
             if record.rec_type == "response":
                 _text = trafilatura.extract(record.content_stream().read())
-                if not text_fits_length(_text):
+                if not _text or not text_fits_length(_text):
                     worker_Monitor.increment_counter(f"worker_{My_WORKER_ID}_filtered_documents")
+                else:
+                    # Parse metadata
+                    url_prefix = item.get("url_prefix", "unknown_prefix")
+                    timestamp = item.get("timestamp", "unknown_timestamp")
+                    metadata = item.get("metadata", {})
+
+                    # Extract year, month, and day from timestamp
+                    try:
+                        dt = datetime.datetime.strptime(timestamp, "%Y%m%d%H%M%S")
+                        year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
+                    except ValueError:
+                        year, month, day = "unknown", "unknown", "unknown"
+
+                    # Generate file name and hierarchy
+                    url = metadata.get("url", "unknown_url")
+                    safe_filename = hashlib.sha256(url.encode()).hexdigest()[:16] + ".txt"
+                    s3_key = os.path.join(year, month, day, url_prefix, safe_filename)
+
+                    # Prepare content to store in file
+                    file_content = {
+                        "metadata": {
+                            "url_prefix": url_prefix,
+                            "surt_url": item.get("surt_url", "unknown_surt_url"),
+                            "timestamp": timestamp,
+                            "url": url,
+                            **metadata
+                        },
+                        "text": _text
+                    }
+
+                    file_body = json.dumps(file_content, indent=4)
+                    # Upload the text to S3
+                    s3_client.put_object(
+                        Bucket="test-bucket",
+                        Key=s3_key,
+                        Body=file_body,
+                        ContentType="application/json"
+                    )
 
                 worker_Monitor.increment_counter(f"worker_{My_WORKER_ID}_processed_documents")
                 # TODO: process text

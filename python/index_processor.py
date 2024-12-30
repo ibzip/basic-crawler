@@ -35,7 +35,7 @@ class ProcessIndexBase:
     def _get_dedup_value(self, values):
         pass
 
-    def _process_cdx_info(self, data):
+    def _process_cdx_info(self, url_prefix, data):
         # Reverse data so that for duplicated surt_urls, the latest url comes to the top
         # In CDX files, same surt_urls are found consecutively in an ascending sorting order
         # Reverse the data to make the order descending
@@ -48,7 +48,7 @@ class ProcessIndexBase:
             values = line.split(" ")
             dedup_value = self._get_dedup_value(values)
             metadata = json.loads("".join(values[2:]))
-            record = self._process_line_in_cdx_block(values, metadata, dedup_value)
+            record = self._process_line_in_cdx_block(url_prefix, values, metadata, dedup_value)
 
             if len(record):
                 self.found_urls.append(record)
@@ -57,7 +57,7 @@ class ProcessIndexBase:
                     self.found_urls = []
 
 
-    def _process_line_in_cdx_block(self, values, metadata, dedup_value):
+    def _process_line_in_cdx_block(self, url_prefix, values, metadata, dedup_value):
         surt_url = values[0]
         if self.dedup_data_store.contains(dedup_value):
             # We already have the same data from this url(based on digest value)
@@ -77,6 +77,7 @@ class ProcessIndexBase:
             )
             self.dedup_data_store.add(dedup_value)
             return {
+                "url_prefix": url_prefix,
                 "surt_url": surt_url,
                 "timestamp": values[1],
                 "metadata": metadata,
@@ -99,7 +100,7 @@ class ProcessIndexBase:
 
             crawl_version, url_prefix, _ = cdx_chunk[0].split(' ')
             if url_prefix != prev_prefix:
-                # since we merged all the cluster.idx fies, and sorted the final file based on url_prefx/timestmap in descending order,
+                # since we merged all the cluster.idx fies, and sorted the final file based on url_prefix/timestmap in descending order,
                 # if there are prefix duplicates in the final file(arising from multiple individual cluster.idx files), they will
                 # be lying together consecutively. That is why when the url prefix changes, we can be sure that we won't see this prefix again
                 # and hence we can empty th state for this prefix.
@@ -120,7 +121,7 @@ class ProcessIndexBase:
             ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
             # This process happens in the following function call.
 
-            self._process_cdx_info(data.split("\n"))
+            self._process_cdx_info(url_prefix, data.split("\n"))
             #if url_prefix == "zw,org,talia)/2024/04/29/mostbet-az-90-kazino-azerbaycan-en-yuksek-bukmeyker-formal-sayt-%e6%b3%b0%e5%9b%bd%e5%a4%b4%e6%9d%a1%e6%96%b0%e9%97%bb-adiyaman-583":
             #    exit(0)
 
