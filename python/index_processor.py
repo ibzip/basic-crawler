@@ -6,11 +6,12 @@ import commoncrawl
 import config
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger()
 
 class ProcessIndexBase:
-    def __init__(self, queue_name, channel, downloader, batch_size, dedup_data_store, batcher_monitor):
+    def __init__(self, queue_name, channel, downloader, batch_size, dedup_data_store, batcher_monitor, batcher_id):
+        global logger
         self.rabbitmq_queue_name = queue_name
         self.channel = channel
         self.downloader = downloader
@@ -21,6 +22,7 @@ class ProcessIndexBase:
         self.batcher_monitor = batcher_monitor
 
         self.found_urls = []
+        logger = logging.getLogger(f"{batcher_id}:{__name__}")
 
     def publish_batch(self, batch) -> None:
         self.channel.basic_publish(
@@ -29,7 +31,7 @@ class ProcessIndexBase:
             body=json.dumps(batch),
         )
         self.batcher_monitor.increment_counter(
-            "batcher_pushed_batches"
+            "pushed_batches"
         )
 
     def _get_dedup_value(self, values):
@@ -40,13 +42,14 @@ class ProcessIndexBase:
         # In CDX files, same surt_urls are found consecutively in an ascending sorting order
         # Reverse the data to make the order descending
         # Then later we will filter the duplicates and pick only the top url in every set of duplicates
+        # Checked that this assumption holds by examining the cdx contents of random chunks
         data.reverse()
 
         for line in data:
             if line == "":
                 continue
             values = line.split(" ")
-            dedup_value = self._get_dedup_value(values)
+            dedup_value = self._get_dedup_value(values) # This will either be surt_url, or a digest associated with a surt_url, based on the type of dedup chosen at the start
             metadata = json.loads("".join(values[2:]))
             record = self._process_line_in_cdx_block(url_prefix, values, metadata, dedup_value)
 
@@ -63,7 +66,7 @@ class ProcessIndexBase:
             # We already have the same data from this url(based on digest value)
             # so ignore this url
             self.batcher_monitor.increment_counter(
-                "batcher_duplicate_skipped_documents"
+                "duplicate_skipped_documents"
             )
             return {}
 
@@ -73,7 +76,7 @@ class ProcessIndexBase:
                 metadata.get("status") in config.config["FILTERS"]["status"]
         ):
             self.batcher_monitor.increment_counter(
-                "batcher_docs_considered_after_filtering"
+                "docs_considered_after_filtering"
             )
             self.dedup_data_store.add(dedup_value)
             return {
@@ -84,7 +87,7 @@ class ProcessIndexBase:
             }
         else:
             self.batcher_monitor.increment_counter(
-                "batcher_filtered_documents"
+                "filtered_out_documents"
             )
         return {}
 
@@ -103,7 +106,7 @@ class ProcessIndexBase:
                 # since we merged all the cluster.idx fies, and sorted the final file based on url_prefix/timestmap in descending order,
                 # if there are prefix duplicates in the final file(arising from multiple individual cluster.idx files), they will
                 # be lying together consecutively. That is why when the url prefix changes, we can be sure that we won't see this prefix again
-                # and hence we can empty th state for this prefix.
+                # and hence we can empty the state for this prefix.
                 logger.info(f"starting new_prefix {url_prefix}")
 
                 # We are going to process urls for a new prefix, so clear the dedup store
@@ -117,7 +120,7 @@ class ProcessIndexBase:
 
             # We will need to maintain state for all unique surt_urls found under a prefix.
             # From that state of unique surt_urls, we would need to pick either:
-            ## 1. the latest data-containing url based on timestamp
+            ## 1. the latest data-containing-url based on timestamp
             ## 2. Unique data duplicates of a surt_url based on digest value associates with each occurrence of the surt_url
             # This process happens in the following function call.
 
@@ -129,7 +132,7 @@ class ProcessIndexBase:
             rows_processed += 1
 
             self.batcher_monitor.set_gauge(
-                "batcher_percentage_cluster_file_processed",
+                "percentage_cluster_file_processed",
                 (rows_processed / total_rows_in_index) * 100
             )
 

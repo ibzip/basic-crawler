@@ -18,18 +18,22 @@ import config
 import monitoring
 import commoncrawl
 
-worker_Monitor = monitoring.MonitoringModule()
+
+MY_WORKER_ID = uuid.uuid4().hex[:16]
+
+worker_monitor = monitoring.MonitoringModule(
+    prefix=f"worker_{MY_WORKER_ID}"
+)
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(f"worker_{MY_WORKER_ID}")
 
-My_WORKER_ID = uuid.uuid4().hex[:16]
 
 s3_endpoint = os.getenv("MINIO_ENDPOINT")
 access_key = os.getenv("MINIO_ACCESS_KEY")
 secret_key = os.getenv("MINIO_SECRET_KEY")
 
-logger.info(f"{s3_endpoint}, {access_key}, {secret_key}")
+logger.info(f"s3 endpoint details: {s3_endpoint}, {access_key}, {secret_key}")
 
 
 def text_fits_length(txt):
@@ -39,7 +43,7 @@ def text_fits_length(txt):
     return True
 
 async def process_batch(downloader, batch):
-    logger.info(f"Received message: {batch.body.decode()}")
+    #logger.info(f"Received message: {batch.body.decode()}")
 
     batch = json.loads(batch.body)
     session = get_session()
@@ -59,8 +63,9 @@ async def process_batch(downloader, batch):
                 if record.rec_type == "response":
                     _text = trafilatura.extract(record.content_stream().read())
                     if not _text or not text_fits_length(_text):
-                        worker_Monitor.increment_counter(f"worker_{My_WORKER_ID}_filtered_documents")
+                        worker_monitor.increment_counter(f"filtered_out_documents")
                     else:
+
                         # Parse metadata
                         url_prefix = item.get("url_prefix", "unknown_prefix")
                         timestamp = item.get("timestamp", "unknown_timestamp")
@@ -93,38 +98,46 @@ async def process_batch(downloader, batch):
                         file_body = json.dumps(file_content, indent=4)
                         # Upload the text to S3
                         await s3_client.put_object(
-                            Bucket="test-bucket",
+                            Bucket=config.config["AWS_STORAGE_BUCKET"],
                             Key=s3_key,
                             Body=file_body.encode("utf-8"),
                             ContentType="application/json"
                         )
 
-                    worker_Monitor.increment_counter(f"worker_{My_WORKER_ID}_processed_documents")
+                    worker_monitor.increment_counter(f"processed_documents")
 
-async def main():
-    worker_Monitor.create_counter(
-        f"worker_{My_WORKER_ID}_consumed_batches",
+
+def create_prometheus_metrics(worker_monitor):
+    worker_monitor.create_counter(
+        f"consumed_batches",
         "Number of batches consumed by the worker"
     )
-    worker_Monitor.create_counter(
-        f"worker_{My_WORKER_ID}_warc_chunk_failed_download",
+    worker_monitor.create_counter(
+        f"warc_chunk_failed_download",
         "Number of WARC chunks failed to download due to http failure"
     )
-    worker_Monitor.create_counter(
-        f"worker_{My_WORKER_ID}_filtered_documents",
+    worker_monitor.create_counter(
+        f"filtered_out_documents",
         "Number of text documents filtered out due to length filter"
     )
-    worker_Monitor.create_counter(
-        f"worker_{My_WORKER_ID}_processed_documents",
+    worker_monitor.create_counter(
+        f"processed_documents",
         "Number of text documents processed by the worker(filtered and non-filtered)"
     )
-    start_http_server(9001)
+
+
+async def main():
+    logger.info(f"starting worker worker_{MY_WORKER_ID}")
+
+    create_prometheus_metrics(worker_monitor)
+
+    start_http_server(config.config["WORKER_PROMETHEUS_SERVER_PORT"])
 
     downloader = commoncrawl.AsyncCCDownloader(
         config.config["BASE_URL"],
         logger,
-        worker_Monitor,
-        f"worker_{My_WORKER_ID}_warc_chunk_failed_download",
+        worker_monitor,
+        f"warc_chunk_failed_download",
     )
     connection = await connect_robust(os.getenv("RABBITMQ_CONNECTION_STRING"))
     channel = await connection.channel()
@@ -137,6 +150,7 @@ async def main():
     async def on_message(message: IncomingMessage):
         async with message.process():
             await process_batch(downloader, message)
+            worker_monitor.increment_counter(f"consumed_batches")
             logger.info("batch processed")
 
 

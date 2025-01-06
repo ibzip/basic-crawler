@@ -34,7 +34,11 @@ config = {
     },
     "CLUSTER_DIR": "cluster_files",
     "COMBINED_CLUSTER_FILE": "combined_cluster.idx",
-    "WORKER_TEXT_SIZE_FILTER": [500, 1000000]
+    "WORKER_TEXT_SIZE_FILTER": [500, 1000000],
+    "BATCHER_PROMETHEUS_SERVER_PORT": 9000,
+    "WORKER_PROMETHEUS_SERVER_PORT": 9001, # note, haven't testes how this would work if multiple workers run the same
+    # start_http_server command with the same port.
+    "AWS_STORAGE_BUCKET": "test-bucket"
 
 }
 

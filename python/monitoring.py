@@ -1,28 +1,33 @@
 from prometheus_client import Counter, Gauge
 
 class MonitoringModule:
-    def __init__(self):
+    def __init__(self, prefix):
         """
         Initialize the monitoring module.
         """
         self.metrics = {}
+        self.base_prefix = prefix
 
     def create_counter(self, name: str, description: str):
         """Create and register a new Prometheus Counter."""
-        if name not in self.metrics:
-            self.metrics[name] = Counter(name, description)
+        fqn = f"{self.base_prefix}_{name}"
+        if fqn not in self.metrics:
+            self.metrics[fqn] = Counter(fqn, description)
 
     def create_gauge(self, name: str, description: str):
         """Create and register a new Prometheus Gauge."""
-        if name not in self.metrics:
-            self.metrics[name] = Gauge(name, description)
+        fqn = f"{self.base_prefix}_{name}"
+        if fqn not in self.metrics:
+            self.metrics[fqn] = Gauge(fqn, description)
 
     def increment_counter(self, name: str, amount: int = 1):
         """Increment a Prometheus Counter by a specified amount."""
-        if name in self.metrics:
-            self.metrics[name].inc(amount)
+        fqn = f"{self.base_prefix}_{name}"
+        if fqn in self.metrics:
+            self.metrics[fqn].inc(amount)
 
     def set_gauge(self, name: str, value: float):
         """Set the value of a Prometheus Gauge."""
-        if name in self.metrics:
-            self.metrics[name].set(value)
+        fqn = f"{self.base_prefix}_{name}"
+        if fqn in self.metrics:
+            self.metrics[fqn].set(value)
