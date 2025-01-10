@@ -2,7 +2,19 @@
 
 ## Overview
 
-This is a project to teach Rust to students.
+This is my python based extension of the basic crawler written by [@Aleph-Alpha](https://github.com/Aleph-Alpha/). It implements:
+- url deduplication for the batcher
+- prometheus metrics for teh batcher and the worker
+- deduplication backend support
+- code restructure to make it more modular and maintainable
+- Async worker
+- To run:
+  - Follow the steps copied verbatim from the aleph alpha repo i.e. running rabbitmq, setting global vars, and running am.
+  - run the minio using the script in minio to mock the s3 backend
+  - run batcher.py
+  - run worker.py
+  - Go to prometheus, rabbitmq, and minio backends to see the downloaded files.
+
 It is inspired by a real-world LLM pre-training data filtering pipeline build at [@Aleph-Alpha](https://github.com/Aleph-Alpha/).
 
 The pipeline downloads archived web pages from the Common Crawl dataset and extracts the text from them and applies some filters. To learn more about the Common Crawl dataset, visit https://commoncrawl.org/get-started.
