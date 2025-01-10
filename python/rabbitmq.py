@@ -3,9 +3,6 @@ import os
 import pika
 
 
-QUEUE_NAME = "batches"
-
-
 class MessageQueueChannel(ABC):
     @abstractmethod
     def basic_publish(self, exchange: str, routing_key: str, body: str) -> None:
@@ -13,8 +10,8 @@ class MessageQueueChannel(ABC):
 
 
 class RabbitMQChannel(MessageQueueChannel):
-    def __init__(self) -> None:
-        self.channel = rabbitmq_channel()
+    def __init__(self, queue_name) -> None:
+        self.channel = rabbitmq_channel(queue_name)
 
     def basic_publish(self, exchange: str, routing_key: str, body: str) -> None:
         self.channel.basic_publish(
@@ -24,11 +21,11 @@ class RabbitMQChannel(MessageQueueChannel):
         )
 
 
-def rabbitmq_channel() -> pika.adapters.blocking_connection.BlockingChannel:
+def rabbitmq_channel(queue_name) -> pika.adapters.blocking_connection.BlockingChannel:
 
     connection = pika.BlockingConnection(
         pika.URLParameters(os.environ["RABBITMQ_CONNECTION_STRING"])
     )
     channel = connection.channel()
-    channel.queue_declare(queue=QUEUE_NAME)
+    channel.queue_declare(queue=queue_name)
     return channel
