@@ -4,7 +4,7 @@
 
 This is my python based extension of the basic crawler written by [@Aleph-Alpha](https://github.com/Aleph-Alpha/). It implements:
 - url deduplication for the batcher
-- prometheus metrics for teh batcher and the worker
+- prometheus metrics for the batcher and the worker
 - deduplication backend support
 - code restructure to make it more modular and maintainable
 - Async worker
@@ -15,7 +15,9 @@ This is my python based extension of the basic crawler written by [@Aleph-Alpha]
   - run worker.py
   - Go to prometheus, rabbitmq, and minio backends to see the downloaded files.
 
-It is inspired by a real-world LLM pre-training data filtering pipeline build at [@Aleph-Alpha](https://github.com/Aleph-Alpha/).
+The following text is from Aleph Alpha's repository to provide more insights into the data and their repository. 
+
+It is inspired by a real-world LLM pre-training data filtering pipeline build at [@Aleph-Alpha](https://github.com/Aleph-Alpha/). 
 
 The pipeline downloads archived web pages from the Common Crawl dataset and extracts the text from them and applies some filters. To learn more about the Common Crawl dataset, visit https://commoncrawl.org/get-started.
 Common Crawl is a non-profit organization that crawls the web and freely provides its archives and datasets to the public.
